@@ -41,4 +41,8 @@ A second op-amp was placed in parallel with the line-detection circuit. The filt
 * If the camera scans an object that is darker than the track (e.g., a physical blockade casting a shadow), the voltage dips below 300mV.
 * The comparator instantly fires a dedicated `OBSTACLE_DETECTED` hardware interrupt to the ESP32, triggering an immediate braking routine before the microcontroller even processes the next frame.
 
-*(See the updated dual-scope simulation screenshot in the repository).**(The compiled `.ino` firmware file is available in this repository).**(See the attached simulation screenshot in the repository for the circuit layout and real-time logic pulse waveform).*
+## Bonus Stage 2: Microcontroller-Free Direct Analog Control
+To prove system resilience and explore pure hardware computation, a completely microcontroller-free analog control loop was designed:
+* **Analog Position Averaging:** The high-frequency digital pulses from the hardware filter are passed through an analog RC integrator network to convert pulse-width variations into a smooth, proportional steering DC voltage.
+* **Potentiometer Tuning Network:** Adjustable trim potentiometers establish baseline reference voltages for center-steering calibration.
+* **Differential Motor Mixing:** The processed analog signals drive an operational amplifier differential network, adjusting left and right motor speeds in real-time based strictly on analog voltage comparison—achieving closed-loop track following with zero software latency.*(See the updated dual-scope simulation screenshot in the repository).**(The compiled `.ino` firmware file is available in this repository).**(See the attached simulation screenshot in the repository for the circuit layout and real-time logic pulse waveform).*
