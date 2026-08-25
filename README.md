@@ -34,4 +34,11 @@ Instead of relying on heavy, slow image processing, the system extracts coordina
 * **X-Coordinate (Horizontal):** Every `CSYNC` pulse also starts a microsecond hardware timer. When the comparator fires a `LINE_DETECTED` pulse (indicating the white track boundary), the timer is paused. This microsecond offset directly correlates to the X-coordinate on the screen.
 * **Result:** The microcontroller derives the precise (X, Y) track boundaries instantly, leaving maximum CPU resources available for the high-speed PID motor control loop.
 
-*(The compiled `.ino` firmware file is available in this repository).**(See the attached simulation screenshot in the repository for the circuit layout and real-time logic pulse waveform).*
+## Bonus Stage 1: Hardware Obstacle Detection
+To achieve obstacle and collision detection without adding processing overhead to the ESP32, a **Window Comparator** architecture was integrated into the analog front-end. 
+
+A second op-amp was placed in parallel with the line-detection circuit. The filtered video signal is routed to its inverting (-) input, with a 300mV reference voltage on the non-inverting (+) input. 
+* If the camera scans an object that is darker than the track (e.g., a physical blockade casting a shadow), the voltage dips below 300mV.
+* The comparator instantly fires a dedicated `OBSTACLE_DETECTED` hardware interrupt to the ESP32, triggering an immediate braking routine before the microcontroller even processes the next frame.
+
+*(See the updated dual-scope simulation screenshot in the repository).**(The compiled `.ino` firmware file is available in this repository).**(See the attached simulation screenshot in the repository for the circuit layout and real-time logic pulse waveform).*
