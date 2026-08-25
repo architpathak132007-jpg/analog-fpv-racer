@@ -25,4 +25,13 @@ To detect the white track boundaries and eliminate false positives from environm
 2. **Threshold Comparator:** A comparator thresholded at 600mV distinguishes high-contrast white lines from the dark track (simulated as a 1V AC source with a 0.5V DC offset).
 3. **Schmitt Trigger (Hysteresis):** A 100kΩ feedback loop ensures that even if shadows cause the voltage to hover near the threshold, the digital output remains cleanly latched without high-frequency fluttering.
 
-*(See the attached simulation screenshot in the repository for the circuit layout and real-time logic pulse waveform).*
+## Stage 4: Filter to Microcontroller (X/Y Extraction Firmware)
+To translate the analog hardware signals into actionable steering data, custom C++ firmware was developed for the **ESP32-C3 SuperMini** using the Arduino IDE. 
+
+Instead of relying on heavy, slow image processing, the system extracts coordinates in real-time using lightweight Hardware Interrupt Service Routines (ISRs):
+
+* **Y-Coordinate (Vertical):** The `VSYNC` interrupt resets the frame line counter to zero. The `CSYNC` interrupt triggers at the start of every new scan line, incrementing the Y-coordinate.
+* **X-Coordinate (Horizontal):** Every `CSYNC` pulse also starts a microsecond hardware timer. When the comparator fires a `LINE_DETECTED` pulse (indicating the white track boundary), the timer is paused. This microsecond offset directly correlates to the X-coordinate on the screen.
+* **Result:** The microcontroller derives the precise (X, Y) track boundaries instantly, leaving maximum CPU resources available for the high-speed PID motor control loop.
+
+*(The compiled `.ino` firmware file is available in this repository).**(See the attached simulation screenshot in the repository for the circuit layout and real-time logic pulse waveform).*
