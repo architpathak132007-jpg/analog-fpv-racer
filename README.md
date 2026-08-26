@@ -16,6 +16,22 @@ This repository contains the hardware design and Gerber files for a 1:32 scale F
 ## Stage 2 & 3: Hardware Sync & Filtering Simulation
 To validate the analog front-end without a physical board, the threshold and filtering logic was simulated.
 
+## Stage 1: Power Distribution & Load Analysis
+The system is powered by a 3S LiPo battery (11.1V nominal, 12.6V peak) utilizing an XT30 connector. Power is distributed into a high-voltage motor rail and a regulated 5V logic rail via an MP1584EN buck converter (3A continuous capacity).
+
+| Component / Load | Voltage Rail | Estimated Max/Stall Current |
+| :--- | :--- | :--- |
+| **MP1584EN Buck Converter** | 3S LiPo (11.1V) | ~1.0 A (Input draw) |
+| **TB6612FNG (VM - Motor Power)**| 3S LiPo (11.1V) | 2.4 A (1.2A per motor stall) |
+| **Left DC Motor (e.g., N20)** | 11.1V (via TB6612) | ~1.2 A (Stall) |
+| **Right DC Motor (e.g., N20)** | 11.1V (via TB6612) | ~1.2 A (Stall) |
+| **ESP32-C3 SuperMini** | 5V (from MP1584) | ~500 mA (WiFi off, active processing) |
+| **LM1881 Video Sync Separator**| 5V (from MP1584) | ~10 mA |
+| **Analog Front-End / Camera** | 5V (from MP1584) | ~250 mA |
+
+*Total Logic (5V) Load: ~760 mA (Well within MP1584 3A limit).*
+*Total System Peak Load: ~3.4 A (XT30 connector is rated for 30A).*
+
 **Stage 2: Camera Output & Sync Extraction**
 Simulating the complex timing intervals of a raw NTSC CVBS signal is prone to software inaccuracies, so Stage 2 is handled entirely at the hardware level. The custom PCB utilizes a dedicated **LM1881 Video Sync Separator IC**. This chip ingests the raw 1Vpp composite video feed and cleanly strips out the Composite Sync (CSYNC) and Vertical Sync (VSYNC) pulses. These logic-level timing signals are routed directly to the ESP32-C3 hardware interrupt pins, fulfilling the synchronization extraction requirement with zero microcontroller overhead.
 
