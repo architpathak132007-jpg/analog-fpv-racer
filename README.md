@@ -1,64 +1,46 @@
-# Analog FPV RC Racer - Hardware Vision System
+# Analog FPV RC Racing Car (1:32 Scale)
 
-## Overview
-This repository contains the hardware design and Gerber files for a 1:32 scale FPV RC racing car. The core objective is to achieve ultra-fast line detection on a black/white track by shifting the vision processing from software to a dedicated analog hardware front-end.
+## Project Overview
+This repository contains the hardware and firmware design for a high-speed 1:32 FPV RC racing car. Designed around the ESP32-C3 SuperMini, the system bypasses the microcontroller's processing limitations by utilizing a custom analog frontend to process an NTSC CVBS camera feed in real-time. The analog circuit handles all white-line detection and synchronization extraction, sending only lightweight, time-critical interrupts to the MCU for X/Y coordinate calculation.
 
-## Hardware Implementation
-* **Power Distribution (Stage 1):** Steps down a 3S LiPo battery to safely power an ESP32-C3 SuperMini, dual drive motors, a motor driver, and the analog camera.
-* **Sync Separation (Stage 2):** Utilizes an LM1881 video sync separator to extract vertical and horizontal timing signals directly from the camera's raw NTSC CVBS feed.
-* **Analog Filtering (Stage 3):** Hardware-level filtering networks distinguish high-contrast white boundaries from the black track surface to eliminate environmental noise.
-* **Data Extraction (Stage 4):** The conditioned sync signals and line-detection triggers are routed to the ESP32-C3, allowing the microcontroller to calculate X/Y coordinates with minimal computational overhead.
+## CAD Software
+* Designed and simulated using **EasyEDA**.
+
+## Hardware Architecture (Analog Frontend)
+### Stage 1: Power Distribution
+A 3S LiPo battery provides the main power rail. The raw 11.1V-12.6V is routed directly to the TB6612FNG motor driver to maximize drive motor velocity. An MP1584EN buck converter safely steps the battery voltage down to a stable +5V to power the analog ICs and the ESP32-C3. 
+
+### Stage 2: Synchronization Extraction
+An LM1881 Video Sync Separator extracts the composite and vertical sync pulses from the raw NTSC CVBS signal. 
+* **Logic Level Protection:** Because the LM1881 runs at 5V, its CSYNC and VSYNC outputs are stepped down to safe ~3.1V logic levels using 2kΩ/3.3kΩ resistor voltage dividers before entering the 3.3V-tolerant ESP32-C3 GPIOs.
+
+### Stage 3: Hardware Filtering & Line Detection
+High-speed line detection is handled purely in hardware via an LM393 voltage comparator.
+* The CVBS video signal is conditioned and fed into the comparator. 
+* A rigid voltage divider sets a **430mV detection threshold**. 
+* The LM393 features an open-collector output pulled up to the ESP32's 3.3V rail. When the camera detects a high-contrast white line, the LM393 output drives low, sending a clean, instantaneous 3.3V pulse to the MCU.
+
+## Software Architecture (Minimal Overhead)
+### Stage 4: Hardware to Microcontroller Interface
+To satisfy the strict "minimal computation" constraint, the ESP32-C3 does not sample video data. Instead, it relies on hardware interrupts (`IRAM_ATTR`). 
+* The LM1881 sync pulses trigger the start of a frame and scanline.
+* The LM393 pulse triggers a hardware timer capture (`esp_timer_get_time()`). 
+* By measuring the microsecond delay between the horizontal sync pulse and the comparator pulse, the ESP32-C3 calculates the exact X/Y coordinates of the track boundaries with virtually zero main-loop overhead.
 
 ## Design Assumptions
-* **Lighting:** The track environment will have relatively consistent lighting to ensure the analog contrast thresholds remain stable.
-* **Battery:** The system assumes a standard 3S LiPo voltage curve (12.6V fully charged down to ~11.1V nominal).
-* **Camera Protocol:** The analog camera strictly operates on the NTSC standard for proper timing extraction.
-## Stage 2 & 3: Hardware Sync & Filtering Simulation
-To validate the analog front-end without a physical board, the threshold and filtering logic was simulated.
+* **Constant Lighting:** The track environment maintains relatively consistent lighting, allowing the fixed 430mV analog comparator threshold to reliably distinguish the white lines from the black track.
+* **NTSC Timing:** The system calculates steering deviation by assuming the physical center of the track aligns perfectly with the center of the active NTSC video scanline (roughly 26.35µs after the horizontal sync pulse).
+* **Track Contrast:** The track is strictly a plain black surface with bright white boundaries, eliminating the need for complex object-classification algorithms.
+* ## Future Work & Bonus Stage Concepts
 
-## Stage 1: Power Distribution & Load Analysis
-The system is powered by a 3S LiPo battery (11.1V nominal, 12.6V peak) utilizing an XT30 connector. Power is distributed into a high-voltage motor rail and a regulated 5V logic rail via an MP1584EN buck converter (3A continuous capacity).
+While this iteration successfully implements the ESP32-C3 pipeline, the architecture is designed with the following analog expansions in mind for future revisions:
 
-| Component / Load | Voltage Rail | Estimated Max/Stall Current |
-| :--- | :--- | :--- |
-| **MP1584EN Buck Converter** | 3S LiPo (11.1V) | ~1.0 A (Input draw) |
-| **TB6612FNG (VM - Motor Power)**| 3S LiPo (11.1V) | 2.4 A (1.2A per motor stall) |
-| **Left DC Motor (e.g., N20)** | 11.1V (via TB6612) | ~1.2 A (Stall) |
-| **Right DC Motor (e.g., N20)** | 11.1V (via TB6612) | ~1.2 A (Stall) |
-| **ESP32-C3 SuperMini** | 5V (from MP1584) | ~500 mA (WiFi off, active processing) |
-| **LM1881 Video Sync Separator**| 5V (from MP1584) | ~10 mA |
-| **Analog Front-End / Camera** | 5V (from MP1584) | ~250 mA |
+### Bonus Objective: Obstacle & Opponent Detection
+To detect physical obstacles or competing vehicles without digital object classification, we can utilize the **second, unused channel of the LM393 dual comparator** (Pins 5, 6, and 7). 
+* While Channel 1 is tuned to a high 430mV threshold to detect peak-white track boundaries, Channel 2 can be configured with a lower threshold (e.g., 200mV) using a separate voltage divider. 
+* This lower threshold would trigger on the mid-level greys caused by the shadows or chassis of competing vehicles on the black track. By comparing the timing of the white-line interrupt vs. the shadow interrupt, the system can flag anomalies on the track surface.
 
-*Total Logic (5V) Load: ~760 mA (Well within MP1584 3A limit).*
-*Total System Peak Load: ~3.4 A (XT30 connector is rated for 30A).*
-
-**Stage 2: Camera Output & Sync Extraction**
-Simulating the complex timing intervals of a raw NTSC CVBS signal is prone to software inaccuracies, so Stage 2 is handled entirely at the hardware level. The custom PCB utilizes a dedicated **LM1881 Video Sync Separator IC**. This chip ingests the raw 1Vpp composite video feed and cleanly strips out the Composite Sync (CSYNC) and Vertical Sync (VSYNC) pulses. These logic-level timing signals are routed directly to the ESP32-C3 hardware interrupt pins, fulfilling the synchronization extraction requirement with zero microcontroller overhead.
-
-**Stage 3: Analog Threshold & Noise Filtering**
-To detect the white track boundaries and eliminate false positives from environmental noise, a discrete analog front-end was designed and simulated:
-1. **RC Low-Pass Filter (1kΩ / 100nF):** Strips away high-frequency camera static and track noise from the raw video signal.
-2. **Threshold Comparator:** A comparator thresholded at 600mV distinguishes high-contrast white lines from the dark track (simulated as a 1V AC source with a 0.5V DC offset).
-3. **Schmitt Trigger (Hysteresis):** A 100kΩ feedback loop ensures that even if shadows cause the voltage to hover near the threshold, the digital output remains cleanly latched without high-frequency fluttering.
-
-## Stage 4: Filter to Microcontroller (X/Y Extraction Firmware)
-To translate the analog hardware signals into actionable steering data, custom C++ firmware was developed for the **ESP32-C3 SuperMini** using the Arduino IDE. 
-
-Instead of relying on heavy, slow image processing, the system extracts coordinates in real-time using lightweight Hardware Interrupt Service Routines (ISRs):
-
-* **Y-Coordinate (Vertical):** The `VSYNC` interrupt resets the frame line counter to zero. The `CSYNC` interrupt triggers at the start of every new scan line, incrementing the Y-coordinate.
-* **X-Coordinate (Horizontal):** Every `CSYNC` pulse also starts a microsecond hardware timer. When the comparator fires a `LINE_DETECTED` pulse (indicating the white track boundary), the timer is paused. This microsecond offset directly correlates to the X-coordinate on the screen.
-* **Result:** The microcontroller derives the precise (X, Y) track boundaries instantly, leaving maximum CPU resources available for the high-speed PID motor control loop.
-
-## Bonus Stage 1: Hardware Obstacle Detection
-To achieve obstacle and collision detection without adding processing overhead to the ESP32, a **Window Comparator** architecture was integrated into the analog front-end. 
-
-A second op-amp was placed in parallel with the line-detection circuit. The filtered video signal is routed to its inverting (-) input, with a 300mV reference voltage on the non-inverting (+) input. 
-* If the camera scans an object that is darker than the track (e.g., a physical blockade casting a shadow), the voltage dips below 300mV.
-* The comparator instantly fires a dedicated `OBSTACLE_DETECTED` hardware interrupt to the ESP32, triggering an immediate braking routine before the microcontroller even processes the next frame.
-
-## Bonus Stage 2: Microcontroller-Free Direct Analog Control
-To prove system resilience and explore pure hardware computation, a completely microcontroller-free analog control loop was designed:
-* **Analog Position Averaging:** The high-frequency digital pulses from the hardware filter are passed through an analog RC integrator network to convert pulse-width variations into a smooth, proportional steering DC voltage.
-* **Potentiometer Tuning Network:** Adjustable trim potentiometers establish baseline reference voltages for center-steering calibration.
-* **Differential Motor Mixing:** The processed analog signals drive an operational amplifier differential network, adjusting left and right motor speeds in real-time based strictly on analog voltage comparison—achieving closed-loop track following with zero software latency.*(See the updated dual-scope simulation screenshot in the repository).**(The compiled `.ino` firmware file is available in this repository).**(See the attached simulation screenshot in the repository for the circuit layout and real-time logic pulse waveform).*
+### Bonus Stage: Microcontroller-Free Direct Control
+To achieve absolute zero-latency steering, the ESP32-C3 can be completely bypassed by routing the LM393 output into a pure analog control loop:
+* **Analog Integration:** The high-speed 3.3V pulses from the LM393 can be fed into an Operational Amplifier configured as an integrator. The timing of the pulse (relative to the horizontal sync) would generate a proportional DC voltage representing the car's off-center error.
+* **Analog PID & PWM:** This error voltage would pass through an analog PID network tuned via physical potentiometers. The resulting control voltage would then feed a 555-timer (or op-amp triangle wave generator) configured as a custom PWM generator, driving the TB6612FNG motor driver directly without a single line of code.
